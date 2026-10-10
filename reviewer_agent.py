@@ -1,11 +1,20 @@
 import json
-from agent_utils import ask_agent
+from agent_utils import ask_json_agent
 
 REVIEWER_SYSTEM_PROMPT = """
 Review the simulation report. Output only a JSON object with issue, likely_cause,
 recommendation (strings) and needs_revision (boolean). Cite specific failed states
 and suggest a concrete navigation correction. No markdown.
 """
+
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {"issue": {"type": "string"}, "likely_cause": {"type": "string"},
+                   "recommendation": {"type": "string"}, "needs_revision": {"type": "boolean"}},
+    "required": ["issue", "likely_cause", "recommendation", "needs_revision"],
+    "additionalProperties": False
+}
 
 
 def validate_reviewer_output(data):
@@ -22,7 +31,8 @@ def run_reviewer(report, offline=False):
                   "recommendation": "Check fallback directions before moving" if failures else "Run IR-SIM benchmark",
                   "needs_revision": bool(failures)}
     else:
-        review = json.loads(ask_agent(REVIEWER_SYSTEM_PROMPT, report))
+        review = ask_json_agent(REVIEWER_SYSTEM_PROMPT, report, REVIEW_SCHEMA,
+                                validate_reviewer_output, "simulation_reviewer")
     if not validate_reviewer_output(review):
         raise ValueError("Invalid simulation review")
     review["needs_revision"] = bool(failures)

@@ -1,5 +1,5 @@
 import json
-from agent_utils import ask_agent
+from agent_utils import ask_json_agent
 
 BENCHMARK_REVIEW_SYSTEM_PROMPT = """
 Review IR-SIM metrics and deterministic review. Output only JSON with issue,
@@ -7,6 +7,17 @@ likely_cause, recommendation as strings and safety_passed, goal_completion_passe
 efficiency_passed, needs_revision as booleans. Name the failing worlds and measured
 steps. Recommend a specific fix. Keep measured boolean values unchanged.
 """
+
+
+BENCHMARK_REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {key: {"type": "string"} for key in ("issue", "likely_cause", "recommendation")},
+    "required": ["issue", "likely_cause", "recommendation", "safety_passed",
+                 "goal_completion_passed", "efficiency_passed", "needs_revision"],
+    "additionalProperties": False
+}
+for key in ("safety_passed", "goal_completion_passed", "efficiency_passed", "needs_revision"):
+    BENCHMARK_REVIEW_SCHEMA["properties"][key] = {"type": "boolean"}
 
 
 def validate_benchmark_review(data):
@@ -40,8 +51,9 @@ def build_deterministic_review(report):
 
 def run_benchmark_reviewer(report, offline=False):
     measured = build_deterministic_review(report)
-    review = measured if offline else json.loads(ask_agent(BENCHMARK_REVIEW_SYSTEM_PROMPT,
-                                                   {"report": report, "deterministic_review": measured}))
+    review = measured if offline else ask_json_agent(
+        BENCHMARK_REVIEW_SYSTEM_PROMPT, {"report": report, "deterministic_review": measured},
+        BENCHMARK_REVIEW_SCHEMA, validate_benchmark_review, "benchmark_reviewer")
     validate_benchmark_review(review)
     for key in ("safety_passed", "goal_completion_passed", "efficiency_passed", "needs_revision"):
         review[key] = measured[key]

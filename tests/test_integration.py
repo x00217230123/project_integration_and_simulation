@@ -31,7 +31,7 @@ def test_measured_results_override_model():
     fake = {"issue": "wrong", "likely_cause": "wrong", "recommendation": "wrong",
             "safety_passed": True, "goal_completion_passed": True,
             "efficiency_passed": True, "needs_revision": False}
-    with patch("reviewer_benchmark_agent.ask_agent", return_value=json.dumps(fake)):
+    with patch("agent_utils.ask_agent", return_value=json.dumps(fake)):
         review = run_benchmark_reviewer(report)
     assert review["needs_revision"]
     assert not review["safety_passed"]
@@ -70,3 +70,42 @@ def test_ollama_does_not_hide_persistent_503():
             with pytest.raises(ResponseError):
                 ProjectClient().chat(model="qwen3:8b", messages=[])
     assert chat.call_count == 3
+
+
+@pytest.mark.parametrize("wrapper", ["{}", "```json\n{}\n```", "<think>Analysis</think>\n{}", "Review:\n{}"])
+def test_simulation_reviewer_accepts_json_wrappers(wrapper):
+    from reviewer_agent import run_reviewer
+    data = {"issue": "None", "likely_cause": "None", "recommendation": "Run benchmark", "needs_revision": False}
+    with patch("agent_utils.ask_agent", return_value=wrapper.replace("{}", json.dumps(data))) as model:
+        review = run_reviewer({"results": [{"passed": False}]})
+    assert review["needs_revision"] is True
+    assert model.call_args.kwargs["output_format"]["type"] == "object"
+
+
+def test_simulation_reviewer_retries_invalid_response(tmp_path, monkeypatch):
+    from reviewer_agent import run_reviewer
+    monkeypatch.chdir(tmp_path)
+    data = {"issue": "None", "likely_cause": "None", "recommendation": "Run benchmark", "needs_revision": False}
+    with patch("agent_utils.ask_agent", side_effect=["", json.dumps(data)]) as model:
+        review = run_reviewer({"results": []})
+    assert model.call_count == 2
+    assert not review["needs_revision"]
+    assert (tmp_path / "artifacts/simulation_reviewer_raw_output.txt").exists()
+
+
+def test_simulation_reviewer_rejects_repeated_invalid_response(tmp_path, monkeypatch):
+    from reviewer_agent import run_reviewer
+    monkeypatch.chdir(tmp_path)
+    with patch("agent_utils.ask_agent", return_value='{"needs_revision": "false"}') as model:
+        with pytest.raises(ValueError, match="failed after 3 attempts"):
+            run_reviewer({"results": []})
+    assert model.call_count == 3
+
+
+def test_json_schema_is_sent_to_ollama():
+    from agent_utils import ask_agent
+    schema = {"type": "object"}
+    with patch("agent_utils.ProjectClient.chat", return_value={"message": {"content": "{}"}}) as chat:
+        assert ask_agent("Review", {}, output_format=schema) == "{}"
+    assert chat.call_args.kwargs["format"] == schema
+    assert chat.call_args.kwargs["think"] is False
