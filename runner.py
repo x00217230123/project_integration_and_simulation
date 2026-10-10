@@ -1,9 +1,28 @@
+import argparse
+from agent_utils import load_navigation, save_json
+from test_agent import scenarios, expected_action
 
 
-## Create a function to run the simulation of the navigation logic.
-## It should define a set of scenarios with different states (e.g., front_blocked, left_blocked, right_blocked), expected outputs (e.g., FORWARD, LEFT, RIGHT, STOP), and then run the decide_next_move function on each scenario.
-## The function should collect the results, including whether the actual output matches the expected output, and return a report summarizing the results.
-## The report must include the total number of scenarios, the number of passed and failed scenarios, and a success rate, which is the number of passed scenarios divided by the total number of scenarios.
+def run_simulation(navigation_path="generated/navigation_logic.py"):
+    decide = load_navigation(navigation_path)
+    results = []
+    for state in scenarios():
+        expected = expected_action(state)
+        try:
+            actual = decide(state.copy())
+            error = None
+        except Exception as exc:
+            actual, error = None, str(exc)
+        results.append({"state": state, "expected": expected, "actual": actual,
+                        "passed": actual == expected, "error": error})
+    passed = sum(row["passed"] for row in results)
+    return {"total_scenarios": len(results), "passed": passed,
+            "failed": len(results) - passed, "success_rate": passed / len(results),
+            "results": results}
 
 
-## If this script is run directly, run the simulation function and save the simulation report to a JSON file.
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--navigation", default="generated/navigation_logic.py")
+    args = parser.parse_args()
+    save_json("artifacts/simulation_report.json", run_simulation(args.navigation))
