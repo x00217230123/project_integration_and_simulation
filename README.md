@@ -44,11 +44,25 @@ Results are saved in `artifacts/`, including `simulation_report.json`, `irsim_be
 
 An efficient IR-SIM run reaches the goal within 200 steps. The maximum is 300 steps. The supplied `collision_or_done` field indicates a terminal condition and does not distinguish every possible cause.
 
-## Tests
+## Complete Verification
+
+```bash
+python run_all_checks.py
+```
+
+This runs the original agent fixture checks, original navigation checks, full pytest suite, offline pipeline with four real IR-SIM worlds, and finally the online Qwen pipeline with a forced revision and up to three revision attempts. It stops on any failure and saves `artifacts/all_checks_report.json` and `artifacts/all_checks_output.log`.
+
+```bash
+python run_all_checks.py --offline
+```
+
+Offline verification omits the live Qwen stage. Passing offline verification does not mean the online stage has passed.
+
+For individual checks:
 
 ```bash
 python tests/test_generated_navigation_logic.py
-python -m pytest tests/test_integration.py generated/test_navigation.py -q
+python -m pytest -q
 ```
 
 See `VALIDATION.md` for measured results. This repository combines the original project and integration template. If the course requires submission in a different original project repository, copy these changes there.

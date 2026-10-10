@@ -32,6 +32,10 @@ def evaluate(requirements, plan, code, offline, label):
     save_json("artifacts/simulation_report.json", report)
     logging.info("%s Simulation created simulation_report.json: %s/64 passed", label, report["passed"])
     review = run_reviewer(report, offline)
+    if process.returncode:
+        review["needs_revision"] = True
+        review["issue"] += "; Generated pytest tests failed"
+        review["recommendation"] += "\nFix the following pytest failures:\n" + (process.stdout + process.stderr)[-6000:]
     save_json("artifacts/simulation_review.json", review)
     logging.info("%s Reviewer created simulation_review.json", label)
     benchmark = run_all_benchmarks()
@@ -52,6 +56,8 @@ def main():
     parser.add_argument("--max-revisions", type=int, default=1)
     parser.add_argument("--force-revision", action="store_true", help="Demonstrate one Qwen revision even when initial benchmarks pass")
     args = parser.parse_args()
+    if args.max_revisions < 0 or (args.force_revision and args.max_revisions < 1):
+        parser.error("--max-revisions must be nonnegative and at least 1 with --force-revision")
     os.chdir(Path(__file__).resolve().parent)
     Path("artifacts").mkdir(exist_ok=True)
     Path("generated").mkdir(exist_ok=True)
@@ -84,6 +90,7 @@ def main():
         if args.offline:
             logging.info("Analyst and Planner fixture replay finished; Developer fixture replay finished")
         review, benchmark, benchmark_review, test_status = evaluate(requirements, plan, code, args.offline, "initial")
+        revision_count = 0
         for number in range(args.max_revisions):
             if not (review["needs_revision"] or benchmark_review["needs_revision"] or test_status or (args.force_revision and number == 0)):
                 break
@@ -95,9 +102,11 @@ def main():
             logging.info("Developer revision saved navigation_logic_revised.py")
             Path("generated/navigation_logic.py").write_text(code, encoding="utf-8")
             review, benchmark, benchmark_review, test_status = evaluate(requirements, plan, code, False, f"revision_{number + 1}")
+            revision_count += 1
         passed = not (review["needs_revision"] or benchmark_review["needs_revision"] or test_status)
         save_json("artifacts/pipeline_status.json", {"mode": "offline" if args.offline else "online", "passed": passed,
-                  "llm_revision_verified": not args.offline and Path("generated/navigation_logic_revised.py").exists()})
+                  "revision_attempts": revision_count,
+                  "llm_revision_verified": not args.offline and revision_count > 0 and passed})
         logging.info("Pipeline finished; passed=%s", passed)
         print("Pipeline passed" if passed else "Pipeline completed; navigation needs revision. See artifacts and trace.log")
         return 0 if passed else 1

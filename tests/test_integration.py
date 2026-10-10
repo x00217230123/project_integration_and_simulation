@@ -138,3 +138,57 @@ def test_test_agent_failure_saves_raw_response(tmp_path, monkeypatch):
             run_test_agent({}, {}, "source")
     assert model.call_count == 3
     assert (tmp_path / "artifacts/test_agent_raw_output.txt").read_text() == "Not Python"
+
+
+def test_failed_pytest_is_included_in_revision_notes(tmp_path, monkeypatch):
+    import subprocess
+    import main as pipeline
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts/irsim_benchmark_report.json").write_text("{}")
+    review = {"issue": "None", "likely_cause": "None", "recommendation": "Run benchmark", "needs_revision": False}
+    process = subprocess.CompletedProcess([], 1, stdout="test_goal failed", stderr="")
+    with patch("main.run_test_agent", return_value="import pytest"):
+        with patch("main.subprocess.run", return_value=process):
+            with patch("main.run_simulation", return_value={"passed": 64, "failed": 0}):
+                with patch("main.run_reviewer", return_value=review):
+                    with patch("main.run_all_benchmarks", return_value={}):
+                        with patch("main.run_benchmark_reviewer", return_value={}):
+                            result = pipeline.evaluate({}, {}, "source", False, "initial")
+    assert result[0]["needs_revision"] is True
+    assert "test_goal failed" in result[0]["recommendation"]
+
+
+def test_all_checks_stops_on_failure(tmp_path, monkeypatch):
+    import subprocess
+    import run_all_checks
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["run_all_checks.py", "--offline"])
+    with patch("run_all_checks.os.chdir"):
+        with patch("run_all_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 1)) as command:
+            assert run_all_checks.main() == 1
+    report = json.loads((tmp_path / "artifacts/all_checks_report.json").read_text())
+    assert not report["passed"]
+    assert not report["completed"]
+    assert command.call_count == 1
+
+
+def test_stale_revision_file_does_not_verify_current_run(tmp_path, monkeypatch):
+    from pathlib import Path
+    import main as pipeline
+    fixture_root = Path(__file__).resolve().parent / "fixtures"
+    (tmp_path / "tests/fixtures").mkdir(parents=True)
+    for name in ("requirements.json", "plan.json", "navigation_logic.py"):
+        (tmp_path / "tests/fixtures" / name).write_bytes((fixture_root / name).read_bytes())
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated/navigation_logic_revised.py").write_text("stale code")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["main.py", "--offline"])
+    with patch("main.os.chdir"):
+        with patch("main.load_file", return_value="brief"):
+            with patch("main.evaluate", return_value=({"needs_revision": False}, {}, {"needs_revision": False}, 0)):
+                assert pipeline.main() == 0
+    report = json.loads((tmp_path / "artifacts/pipeline_status.json").read_text())
+    assert report["revision_attempts"] == 0
+    assert report["llm_revision_verified"] is False
