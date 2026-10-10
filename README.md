@@ -17,7 +17,7 @@ python main.py --force-revision
 
 The pipeline runs the Analyst, Planner, Developer, Test Agent, simulation, simulation reviewer, IR-SIM benchmark, and benchmark reviewer. A revision is saved as `generated/navigation_logic_revised.py` and applied to `generated/navigation_logic.py` before testing again. `--force-revision` requests one revision even when the initial run passes.
 
-The default limit is one revision. Use `--max-revisions 3` for up to three revisions. A failed pipeline returns exit code 1. Ollama requests disable thinking and retry HTTP 429 or 503 up to twice. Reviewers request structured JSON, validate the response, and retry invalid responses up to three attempts. Invalid raw responses are saved under `artifacts/`.
+The default limit is one revision. Use `--max-revisions 3` for up to three revisions. A failed pipeline returns exit code 1. Ollama requests disable thinking and retry HTTP 429 or 503 up to twice. Reviewers request structured JSON, validate the response, and retry invalid responses up to three attempts. Invalid raw responses are saved under `artifacts/`. The Test Agent retries invalid Python output up to three attempts and saves its latest raw response to `artifacts/test_agent_raw_output.txt`.
 
 ## Offline Run
 

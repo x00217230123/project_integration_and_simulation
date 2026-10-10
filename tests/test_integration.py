@@ -109,3 +109,32 @@ def test_json_schema_is_sent_to_ollama():
         assert ask_agent("Review", {}, output_format=schema) == "{}"
     assert chat.call_args.kwargs["format"] == schema
     assert chat.call_args.kwargs["think"] is False
+
+
+@pytest.mark.parametrize("code", [
+    "import pytest\nCASES = [\n    ({'goal_ahead': True}, 'FORWARD'),\n]\n\ndef test_case():\n    result = 'FORWARD'\n    assert result == CASES[0][1]",
+    "import pytest\ndef test_case():\n    assert True\n\nTEST_DATA = [1, 2, 3]"
+])
+def test_python_extraction_preserves_valid_bare_source(code):
+    from developer_agent import extract_python_code
+    assert extract_python_code(code) == code
+
+
+def test_test_agent_retries_and_keeps_raw_response(tmp_path, monkeypatch):
+    from test_agent import run_test_agent
+    monkeypatch.chdir(tmp_path)
+    code = "import pytest\ndef test_example():\n    assert True"
+    with patch("test_agent.ask_agent", side_effect=["Not Python", code]) as model:
+        assert run_test_agent({}, {}, "source") == code
+    assert model.call_count == 2
+    assert (tmp_path / "artifacts/test_agent_raw_output.txt").read_text() == code
+
+
+def test_test_agent_failure_saves_raw_response(tmp_path, monkeypatch):
+    from test_agent import run_test_agent
+    monkeypatch.chdir(tmp_path)
+    with patch("test_agent.ask_agent", return_value="Not Python") as model:
+        with pytest.raises(ValueError, match="failed after 3 attempts"):
+            run_test_agent({}, {}, "source")
+    assert model.call_count == 3
+    assert (tmp_path / "artifacts/test_agent_raw_output.txt").read_text() == "Not Python"

@@ -76,6 +76,12 @@ def extract_python_code(raw_text):
         text = text[1:]
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
+    try:
+        ast.parse(text)
+        return text
+    except SyntaxError:
+        pass
+
     lines = text.split("\n")
 
     fence_idx = [i for i, line in enumerate(lines) if line.strip().startswith("```")]
